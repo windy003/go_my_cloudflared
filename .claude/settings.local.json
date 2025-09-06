@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go run:*)",
+      "Bash(go mod:*)",
+      "Bash(go build:*)",
+      "Bash(timeout:*)",
+      "Bash(.tunnel-server.exe --help)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

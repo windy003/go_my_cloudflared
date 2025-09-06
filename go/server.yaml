@@ -1,0 +1,13 @@
+server:
+  httpPort: 6000       # HTTP服务端口（外部用户访问）
+  wsPort: 6001         # WebSocket端口（客户端连接）
+  host: "0.0.0.0"      # 监听地址
+  publicDomain: "windy.run"
+  requestTimeout: 30000
+  maxClients: 100
+
+auth:
+  requireAuth: true
+  tokens:
+    - "default-token"
+    - "my-secure-token-12345"
