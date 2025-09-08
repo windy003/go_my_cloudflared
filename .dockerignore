@@ -1,0 +1,43 @@
+# Git相关
+.git
+.gitignore
+
+# Docker相关
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 构建产物
+go/tunnel-server
+*.exe
+
+# 日志文件
+*.log
+logs/
+
+# 配置文件（生产环境中应该通过卷挂载）
+config/
+
+# IDE文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 测试覆盖率
+*.out
+coverage.html
+
+# 临时文件
+*.tmp
+*.temp
+
+# SSL证书
+*.crt
+*.key
+*.pem
+certs/

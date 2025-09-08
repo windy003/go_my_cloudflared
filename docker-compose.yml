@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  tunnel-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: windy007008/go-my-cloudflared:latest
+    container_name: go-tunnel-server
+    restart: unless-stopped
+    ports:
+      # HTTP端口
+      - "6000:6000"
+      # WebSocket端口
+      - "6001:6001"
+      # HTTPS端口 (如需要)
+      - "6443:6443"
+      # WebSocket Secure端口 (如需要)
+      - "6444:6444"
+    environment:
+      # 可以通过环境变量覆盖配置
+      - TZ=Asia/Shanghai
+    volumes:
+      # 配置文件目录
+      - ./config:/app/config:ro
+      # SSL证书目录 (如果使用HTTPS)
+      - /etc/letsencrypt/live/windy.run/fullchain.pem:/etc/ssl/certs/fullchain.pem:ro
+      - /etc/letsencrypt/live/windy.run/privkey.pem:/etc/ssl/certs/privkey.pem:ro
+      - ./logs:/app/logs
+    networks:
+      - tunnel-network
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  tunnel-network:
+    driver: bridge
+
+# 可选的卷定义
+volumes:
+  tunnel-config:
+  tunnel-logs:

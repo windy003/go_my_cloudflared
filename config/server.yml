@@ -1,0 +1,33 @@
+# 隧道服务器配置文件
+server:
+  # HTTP服务端口
+  httpPort: 6000
+  # WebSocket端口
+  wsPort: 6001
+  # 监听地址 (0.0.0.0表示监听所有网卡)
+  host: "0.0.0.0"
+  # 公共域名 (客户端显示的访问地址)
+  publicDomain: "localhost"
+  # 请求超时时间 (毫秒)
+  requestTimeout: 30000
+  # 最大客户端连接数
+  maxClients: 100
+  
+  # HTTPS配置
+  enableHttps: true
+  httpsPort: 6443
+  certFile: "/etc/ssl/certs/fullchain.pem"
+  keyFile: "/etc/ssl/certs/privkey.pem"
+  
+  # WebSocket Secure配置
+  enableWss: true
+  wssPort: 6444
+
+# 认证配置
+auth:
+  # 是否需要认证
+  requireAuth: true
+  # 有效的认证令牌列表
+  tokens:
+    - "default-token"
+    - "my-secure-token-12345"

@@ -8,7 +8,7 @@ server:
   
   # HTTPS 配置
   enableHttps: true          # 启用HTTPS
-  httpsPort: 443         # HTTPS端口
+  httpsPort: 6443         # HTTPS端口
   certFile: "/etc/letsencrypt/live/windy.run/fullchain.pem"    # SSL证书文件路径
   keyFile: "/etc/letsencrypt/live/windy.run/privkey.pem"     # SSL私钥文件路径
   
