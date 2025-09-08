@@ -1,9 +1,0 @@
-tunnel:
-  url: "ws://windy.run:6001"       # 隧道服务器地址
-  authToken: "my-secure-token-12345"    # 认证令牌
-  reconnectAttempts: 10            # 最大重连次数
-  reconnectDelay: 5000            # 重连延迟(毫秒)
-
-local:
-  host: "localhost"               # 本地服务地址
-  port:  5008                    # 本地服务端口

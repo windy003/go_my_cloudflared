@@ -8,6 +8,7 @@
 - ✅ **配置灵活**: 支持 YAML/JSON 配置文件和命令行参数
 - ✅ **自动重连**: 网络断开时自动重连
 - ✅ **令牌认证**: 安全的令牌认证机制
+- ✅ **HTTPS支持**: 支持TLS/SSL加密传输，WSS安全WebSocket
 - ✅ **交叉编译**: 支持 Linux/Windows/macOS 多平台
 
 ## 🚀 快速开始
@@ -145,6 +146,118 @@ go\tunnel-client.exe run -c tunnel.json
 
 现在访问 `http://windy.run:6000` 就能看到你内网的服务了！
 
+## 🔐 HTTPS 配置
+
+### 1. 生成SSL证书
+
+#### 自签名证书（测试用）
+```bash
+# Linux/macOS
+chmod +x generate-cert.sh
+./generate-cert.sh
+
+# Windows
+generate-cert.bat
+```
+
+#### 正式SSL证书
+将正式的SSL证书文件放在Go目录下，并在配置文件中指定路径。
+
+### 2. 启用HTTPS服务器
+
+#### 使用配置文件
+```bash
+# 编辑配置文件 server-https.yaml
+go run cmd/server/main.go start -c server-https.yaml
+```
+
+#### 使用命令行参数
+```bash
+# 只启用HTTPS
+go run cmd/server/main.go start \
+  --enable-https \
+  --https-port 6443 \
+  --cert-file server.crt \
+  --key-file server.key
+
+# 同时启用HTTP和HTTPS
+go run cmd/server/main.go start \
+  --http-port 6000 \
+  --https-port 6443 \
+  --enable-https \
+  --cert-file server.crt \
+  --key-file server.key
+
+# 启用WSS (安全WebSocket)
+go run cmd/server/main.go start \
+  --enable-https \
+  --enable-wss \
+  --https-port 6443 \
+  --wss-port 6444 \
+  --cert-file server.crt \
+  --key-file server.key
+```
+
+### 3. 客户端连接WSS
+
+#### 使用配置文件（推荐）
+```bash
+# 1. 创建WSS配置文件
+go run cmd/client/main.go config init
+
+# 2. 编辑tunnel.json，修改为WSS配置：
+# {
+#   "tunnel": {
+#     "url": "wss://windy.run:6444",
+#     "authToken": "your-token",
+#     "insecureSkipVerify": true,
+#     "serverName": "windy.run"
+#   }
+# }
+
+# 3. 启动客户端
+go run cmd/client/main.go run -c tunnel.json
+```
+
+#### 使用命令行参数
+```bash
+# 注意：命令行方式无法配置SSL选项，仅适用于有效SSL证书
+go run cmd/client/main.go run \
+  --tunnel-url wss://windy.run:6444 \
+  --auth-token your-token \
+  --local-port 3000
+```
+
+#### 自签名证书配置
+对于自签名证书，必须在配置文件中设置：
+```json
+{
+  "tunnel": {
+    "url": "wss://windy.run:6444",
+    "authToken": "your-token",
+    "insecureSkipVerify": true,
+    "serverName": "windy.run"
+  }
+}
+```
+
+### 4. 访问HTTPS服务
+```bash
+# 访问HTTPS端点
+curl -k https://windy.run:6443
+
+# 访问HTTPS管理接口
+curl -k https://windy.run:6443/health
+curl -k https://windy.run:6443/clients
+```
+
+### 5. 防火墙配置
+```bash
+# 开放HTTPS和WSS端口
+sudo ufw allow 6443/tcp  # HTTPS
+sudo ufw allow 6444/tcp  # WSS
+```
+
 ## 💡 完整使用示例（go run方式）
 
 ### VPS 服务器操作
@@ -263,6 +376,12 @@ tunnel-server token list               # 列出令牌
 --http-port         HTTP端口 (默认6000)
 --ws-port          WebSocket端口 (默认6001)
 --host             监听地址 (默认0.0.0.0)
+--enable-https     启用HTTPS服务器
+--https-port       HTTPS端口 (默认6443)
+--cert-file        SSL证书文件路径
+--key-file         SSL私钥文件路径
+--enable-wss       启用WebSocket Secure (WSS)
+--wss-port         WSS端口 (默认6444)
 ```
 
 ### 客户端命令
@@ -313,6 +432,16 @@ server:
   publicDomain: "windy.run"   # 公网域名
   requestTimeout: 30000       # 请求超时(毫秒)
   maxClients: 100            # 最大客户端数
+  
+  # HTTPS 配置
+  enableHttps: true          # 启用HTTPS
+  httpsPort: 6443           # HTTPS端口
+  certFile: "server.crt"    # SSL证书文件路径
+  keyFile: "server.key"     # SSL私钥文件路径
+  
+  # WebSocket Secure 配置
+  enableWss: true           # 启用WSS (WebSocket over TLS)
+  wssPort: 6444            # WSS端口
 
 auth:
   requireAuth: true
@@ -325,10 +454,16 @@ auth:
 
 ```yaml
 tunnel:
-  url: "ws://windy.run:6001"        # 服务器地址
+  url: "ws://windy.run:6001"        # 服务器地址 (HTTP)
+  # url: "wss://windy.run:6444"     # 或使用WSS安全连接
   authToken: "your-token"           # 认证令牌
   reconnectAttempts: 10             # 重连次数
   reconnectDelay: 5000             # 重连延迟
+  
+  # WSS/TLS 配置 (使用wss://时需要)
+  insecureSkipVerify: true         # 跳过证书验证（自签名证书）
+  serverName: "windy.run"          # 服务器名称
+  caCertFile: ""                   # CA证书文件路径（可选）
 
 local:
   host: "localhost"                # 本地服务地址
@@ -452,9 +587,11 @@ sudo ufw allow 6001
 
 - 使用强随机令牌
 - 定期更换认证令牌  
-- 启用HTTPS (配置SSL证书)
+- ✅ 启用HTTPS (配置SSL证书)
+- ✅ 使用WSS替代WS连接
 - 限制客户端连接数
 - 监控异常访问
+- 生产环境使用正式SSL证书
 
 ## 📈 性能优势
 

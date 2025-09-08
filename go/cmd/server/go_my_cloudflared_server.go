@@ -26,6 +26,13 @@ type Config struct {
 		PublicDomain  string `yaml:"publicDomain" json:"publicDomain"`
 		RequestTimeout int   `yaml:"requestTimeout" json:"requestTimeout"`
 		MaxClients    int    `yaml:"maxClients" json:"maxClients"`
+		// HTTPS 配置
+		EnableHTTPS   bool   `yaml:"enableHttps" json:"enableHttps"`
+		HTTPSPort     int    `yaml:"httpsPort" json:"httpsPort"`
+		CertFile      string `yaml:"certFile" json:"certFile"`
+		KeyFile       string `yaml:"keyFile" json:"keyFile"`
+		EnableWSS     bool   `yaml:"enableWss" json:"enableWss"`
+		WSSPort       int    `yaml:"wssPort" json:"wssPort"`
 	} `yaml:"server" json:"server"`
 	Auth struct {
 		RequireAuth bool     `yaml:"requireAuth" json:"requireAuth"`
@@ -42,6 +49,13 @@ func DefaultConfig() *Config {
 	config.Server.PublicDomain = ""
 	config.Server.RequestTimeout = 30000
 	config.Server.MaxClients = 100
+	// HTTPS 默认配置
+	config.Server.EnableHTTPS = false
+	config.Server.HTTPSPort = 6443
+	config.Server.CertFile = "server.crt"
+	config.Server.KeyFile = "server.key"
+	config.Server.EnableWSS = false
+	config.Server.WSSPort = 6444
 	config.Auth.RequireAuth = true
 	config.Auth.Tokens = []string{"default-token"}
 	return config
@@ -87,7 +101,9 @@ type TunnelServer struct {
 	clientsMux     sync.RWMutex
 	upgrader       websocket.Upgrader
 	httpServer     *http.Server
+	httpsServer    *http.Server
 	wsServer       *http.Server
+	wssServer      *http.Server
 	pendingRequests map[string]chan HTTPResponse
 	requestMux     sync.RWMutex
 }
@@ -119,7 +135,17 @@ func (s *TunnelServer) Start() error {
 	// 启动WebSocket服务器
 	go s.startWebSocketServer()
 	
-	// 启动HTTP服务器
+	// 启动WebSocket Secure服务器 (WSS)
+	if s.config.Server.EnableWSS {
+		go s.startWebSocketSecureServer()
+	}
+	
+	// 启动HTTPS服务器
+	if s.config.Server.EnableHTTPS {
+		go s.startHTTPSServer()
+	}
+	
+	// 启动HTTP服务器 (最后启动，阻塞)
 	return s.startHTTPServer()
 }
 
@@ -171,6 +197,48 @@ func (s *TunnelServer) startHTTPServer() error {
 	log.Printf("客户端列表: http://localhost:%d/clients", s.config.Server.HTTPPort)
 	
 	return s.httpServer.Serve(listener)
+}
+
+// startHTTPSServer 启动HTTPS服务器
+func (s *TunnelServer) startHTTPSServer() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", s.handleHealth)
+	mux.HandleFunc("/clients", s.handleClients)
+	mux.HandleFunc("/", s.handleHTTPRequest)
+	
+	addr := fmt.Sprintf("%s:%d", s.config.Server.Host, s.config.Server.HTTPSPort)
+	
+	s.httpsServer = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+	
+	log.Printf("HTTPS服务器启动在端口 %d (IPv4: %s)", s.config.Server.HTTPSPort, addr)
+	log.Printf("HTTPS管理接口: https://localhost:%d/health", s.config.Server.HTTPSPort)
+	log.Printf("HTTPS客户端列表: https://localhost:%d/clients", s.config.Server.HTTPSPort)
+	
+	if err := s.httpsServer.ListenAndServeTLS(s.config.Server.CertFile, s.config.Server.KeyFile); err != nil && err != http.ErrServerClosed {
+		log.Printf("HTTPS服务器错误: %v", err)
+	}
+}
+
+// startWebSocketSecureServer 启动WebSocket Secure服务器 (WSS)
+func (s *TunnelServer) startWebSocketSecureServer() {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleWebSocket)
+	
+	addr := fmt.Sprintf("%s:%d", s.config.Server.Host, s.config.Server.WSSPort)
+	
+	s.wssServer = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+	
+	log.Printf("WebSocket Secure服务器启动在端口 %d (IPv4: %s)", s.config.Server.WSSPort, addr)
+	
+	if err := s.wssServer.ListenAndServeTLS(s.config.Server.CertFile, s.config.Server.KeyFile); err != nil && err != http.ErrServerClosed {
+		log.Printf("WSS服务器错误: %v", err)
+	}
 }
 
 // handleWebSocket 处理WebSocket连接
@@ -498,6 +566,12 @@ var serverCmd = &cobra.Command{
 		httpPort, _ := cmd.Flags().GetInt("http-port")
 		wsPort, _ := cmd.Flags().GetInt("ws-port")
 		host, _ := cmd.Flags().GetString("host")
+		enableHTTPS, _ := cmd.Flags().GetBool("enable-https")
+		httpsPort, _ := cmd.Flags().GetInt("https-port")
+		certFile, _ := cmd.Flags().GetString("cert-file")
+		keyFile, _ := cmd.Flags().GetString("key-file")
+		enableWSS, _ := cmd.Flags().GetBool("enable-wss")
+		wssPort, _ := cmd.Flags().GetInt("wss-port")
 		
 		// 加载配置
 		config, err := LoadConfig(configPath)
@@ -515,10 +589,35 @@ var serverCmd = &cobra.Command{
 		if host != "" {
 			config.Server.Host = host
 		}
+		if cmd.Flags().Changed("enable-https") {
+			config.Server.EnableHTTPS = enableHTTPS
+		}
+		if httpsPort != 0 {
+			config.Server.HTTPSPort = httpsPort
+		}
+		if certFile != "" {
+			config.Server.CertFile = certFile
+		}
+		if keyFile != "" {
+			config.Server.KeyFile = keyFile
+		}
+		if cmd.Flags().Changed("enable-wss") {
+			config.Server.EnableWSS = enableWSS
+		}
+		if wssPort != 0 {
+			config.Server.WSSPort = wssPort
+		}
 		
 		fmt.Printf("启动隧道服务器...\n")
 		fmt.Printf("HTTP 端口: %d\n", config.Server.HTTPPort)
 		fmt.Printf("WebSocket 端口: %d\n", config.Server.WSPort)
+		if config.Server.EnableHTTPS {
+			fmt.Printf("HTTPS 端口: %d\n", config.Server.HTTPSPort)
+			fmt.Printf("SSL 证书: %s\n", config.Server.CertFile)
+		}
+		if config.Server.EnableWSS {
+			fmt.Printf("WSS 端口: %d\n", config.Server.WSSPort)
+		}
 		fmt.Printf("认证令牌数量: %d\n", len(config.Auth.Tokens))
 		
 		// 创建并启动服务器
@@ -571,6 +670,13 @@ func init() {
 	serverCmd.Flags().Int("http-port", 0, "HTTP服务端口")
 	serverCmd.Flags().Int("ws-port", 0, "WebSocket端口") 
 	serverCmd.Flags().String("host", "", "监听地址")
+	// HTTPS 相关标志
+	serverCmd.Flags().Bool("enable-https", false, "启用HTTPS服务器")
+	serverCmd.Flags().Int("https-port", 0, "HTTPS服务端口 (默认6443)")
+	serverCmd.Flags().String("cert-file", "", "SSL证书文件路径")
+	serverCmd.Flags().String("key-file", "", "SSL私钥文件路径")
+	serverCmd.Flags().Bool("enable-wss", false, "启用WebSocket Secure (WSS)")
+	serverCmd.Flags().Int("wss-port", 0, "WSS端口 (默认6444)")
 	
 	// token 命令标志
 	tokenCmd.PersistentFlags().StringP("config", "c", "", "配置文件路径")

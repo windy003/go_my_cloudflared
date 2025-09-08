@@ -1,0 +1,14 @@
+tunnel:
+  url: "wss://windy.run:6444"        # WSS安全连接地址
+  authToken: "my-secure-token-12345"  # 认证令牌
+  reconnectAttempts: 10              # 重连次数
+  reconnectDelay: 5000              # 重连延迟(毫秒)
+  
+  # WSS/TLS 配置
+  insecureSkipVerify: true          # 跳过证书验证（自签名证书时使用）
+  serverName: "windy.run"           # 服务器名称
+  caCertFile: ""                    # CA证书文件路径（可选）
+
+local:
+  host: "localhost"                 # 本地服务地址
+  port: 5008                      # 本地服务端口

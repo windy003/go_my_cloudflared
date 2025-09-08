@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,10 @@ type Config struct {
 		AuthToken        string `yaml:"authToken" json:"authToken"`
 		ReconnectAttempts int   `yaml:"reconnectAttempts" json:"reconnectAttempts"`
 		ReconnectDelay    int   `yaml:"reconnectDelay" json:"reconnectDelay"`
+		// TLS/SSL 配置
+		InsecureSkipVerify bool   `yaml:"insecureSkipVerify" json:"insecureSkipVerify"`
+		ServerName         string `yaml:"serverName" json:"serverName"`
+		CACertFile         string `yaml:"caCertFile" json:"caCertFile"`
 	} `yaml:"tunnel" json:"tunnel"`
 	Local struct {
 		Host string `yaml:"host" json:"host"`
@@ -39,6 +44,10 @@ func DefaultConfig() *Config {
 	config.Tunnel.AuthToken = "default-token"
 	config.Tunnel.ReconnectAttempts = 10
 	config.Tunnel.ReconnectDelay = 5000
+	// TLS 默认配置
+	config.Tunnel.InsecureSkipVerify = false
+	config.Tunnel.ServerName = ""
+	config.Tunnel.CACertFile = ""
 	config.Local.Host = "localhost"
 	config.Local.Port = 3000
 	return config
@@ -116,8 +125,32 @@ func (c *TunnelClient) connect() error {
 	headers.Set("X-Tunnel-Host", c.config.Local.Host)
 	headers.Set("X-Tunnel-Port", fmt.Sprintf("%d", c.config.Local.Port))
 	
+	// 创建WebSocket拨号器
+	dialer := *websocket.DefaultDialer
+	
+	// 检查是否为WSS连接
+	if strings.HasPrefix(c.config.Tunnel.URL, "wss://") {
+		// 配置TLS
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: c.config.Tunnel.InsecureSkipVerify,
+		}
+		
+		// 设置服务器名称
+		if c.config.Tunnel.ServerName != "" {
+			tlsConfig.ServerName = c.config.Tunnel.ServerName
+		}
+		
+		// 如果指定了CA证书文件，这里可以加载（暂时跳过实现）
+		if c.config.Tunnel.CACertFile != "" {
+			log.Printf("注意: CA证书文件配置暂未实现: %s", c.config.Tunnel.CACertFile)
+		}
+		
+		dialer.TLSClientConfig = tlsConfig
+		log.Printf("使用WSS连接，InsecureSkipVerify: %v", c.config.Tunnel.InsecureSkipVerify)
+	}
+	
 	// 建立WebSocket连接
-	conn, _, err := websocket.DefaultDialer.Dial(c.config.Tunnel.URL, headers)
+	conn, _, err := dialer.Dial(c.config.Tunnel.URL, headers)
 	if err != nil {
 		return fmt.Errorf("WebSocket连接失败: %v", err)
 	}
@@ -467,10 +500,14 @@ var initConfigCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		config := map[string]interface{}{
 			"tunnel": map[string]interface{}{
-				"url":               "ws://windy.run:6001",
+				"url":               "wss://windy.run:6444",
 				"authToken":         "your-auth-token-here",
 				"reconnectAttempts": 10,
 				"reconnectDelay":    5000,
+				// WSS/TLS 配置
+				"insecureSkipVerify": true,  // 自签名证书时设为true
+				"serverName":         "",    // 可选：指定服务器名称
+				"caCertFile":         "",    // 可选：CA证书文件路径
 			},
 			"local": map[string]interface{}{
 				"host": "localhost",
