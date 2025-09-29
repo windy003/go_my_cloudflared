@@ -26,6 +26,7 @@ type Config struct {
 		AuthToken        string `yaml:"authToken" json:"authToken"`
 		ReconnectAttempts int   `yaml:"reconnectAttempts" json:"reconnectAttempts"`
 		ReconnectDelay    int   `yaml:"reconnectDelay" json:"reconnectDelay"`
+		MaxReconnectDelay int   `yaml:"maxReconnectDelay" json:"maxReconnectDelay"`
 		// TLS/SSL 配置
 		InsecureSkipVerify bool   `yaml:"insecureSkipVerify" json:"insecureSkipVerify"`
 		ServerName         string `yaml:"serverName" json:"serverName"`
@@ -42,8 +43,9 @@ func DefaultConfig() *Config {
 	config := &Config{}
 	config.Tunnel.URL = "ws://localhost:6001"
 	config.Tunnel.AuthToken = "default-token"
-	config.Tunnel.ReconnectAttempts = 10
-	config.Tunnel.ReconnectDelay = 5000
+	config.Tunnel.ReconnectAttempts = -1 // -1 表示无限重连
+	config.Tunnel.ReconnectDelay = 1000
+	config.Tunnel.MaxReconnectDelay = 60000 // 最大重连延迟60秒
 	// TLS 默认配置
 	config.Tunnel.InsecureSkipVerify = false
 	config.Tunnel.ServerName = ""
@@ -398,17 +400,35 @@ func (c *TunnelClient) reconnect() {
 	c.reconnectCount++
 	count := c.reconnectCount
 	c.mu.Unlock()
-	
-	if count > c.config.Tunnel.ReconnectAttempts {
+
+	// 检查是否达到最大重连次数（-1 表示无限重连）
+	if c.config.Tunnel.ReconnectAttempts > 0 && count > c.config.Tunnel.ReconnectAttempts {
 		log.Printf("达到最大重连次数 (%d)，停止重连", c.config.Tunnel.ReconnectAttempts)
 		return
 	}
-	
-	delay := time.Duration(c.config.Tunnel.ReconnectDelay*count) * time.Millisecond
-	log.Printf("尝试重连 (%d/%d)，等待 %v...", count, c.config.Tunnel.ReconnectAttempts, delay)
-	
+
+	// 指数退避算法：基本延迟 * 2^(重连次数-1)
+	baseDelay := time.Duration(c.config.Tunnel.ReconnectDelay) * time.Millisecond
+	exponent := count - 1
+	if exponent > 6 { // 限制指数上限，防止延迟过长
+		exponent = 6
+	}
+	delay := baseDelay * time.Duration(1<<uint(exponent))
+
+	// 限制最大延迟
+	maxDelay := time.Duration(c.config.Tunnel.MaxReconnectDelay) * time.Millisecond
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+
+	if c.config.Tunnel.ReconnectAttempts > 0 {
+		log.Printf("尝试重连 (%d/%d)，等待 %v...", count, c.config.Tunnel.ReconnectAttempts, delay)
+	} else {
+		log.Printf("尝试重连 (第%d次)，等待 %v...", count, delay)
+	}
+
 	time.Sleep(delay)
-	
+
 	if err := c.connect(); err != nil {
 		log.Printf("重连失败: %v", err)
 		go c.reconnect() // 继续尝试
@@ -500,14 +520,15 @@ var initConfigCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		config := map[string]interface{}{
 			"tunnel": map[string]interface{}{
-				"url":               "wss://windy.run:6444",
-				"authToken":         "your-auth-token-here",
-				"reconnectAttempts": 10,
-				"reconnectDelay":    5000,
+				"url":                "wss://windy.run:6444",
+				"authToken":          "your-auth-token-here",
+				"reconnectAttempts":  -1,     // -1 表示无限重连，设为正数则限制重连次数
+				"reconnectDelay":     1000,   // 基础重连延迟1秒
+				"maxReconnectDelay":  60000,  // 最大重连延迟60秒
 				// WSS/TLS 配置
-				"insecureSkipVerify": true,  // 自签名证书时设为true
-				"serverName":         "",    // 可选：指定服务器名称
-				"caCertFile":         "",    // 可选：CA证书文件路径
+				"insecureSkipVerify": true,   // 自签名证书时设为true
+				"serverName":         "",     // 可选：指定服务器名称
+				"caCertFile":         "",     // 可选：CA证书文件路径
 			},
 			"local": map[string]interface{}{
 				"host": "localhost",
